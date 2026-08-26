@@ -16,61 +16,44 @@ export default async function handler(req, res) {
     const svc = data.selectedService || data.recommendedService;
     const mismatch = data.selectedService && data.selectedService !== data.recommendedService;
     const svcVotes = data.svcVotes || {};
-    const scoreText = Object.entries(sc).map(([k, v]) => `S${k}: ${Math.round(v)}점`).join(' / ');
 
-    // ─── 1. 의뢰사 DB (간소화) ───
-    const meetDt1 = c.meetingDate1 && c.meetingTime1 ? `${c.meetingDate1}T${c.meetingTime1}:00+09:00` : c.meetingDate1 || null;
-    const meetDt2 = c.meetingDate2 && c.meetingTime2 ? `${c.meetingDate2}T${c.meetingTime2}:00+09:00` : c.meetingDate2 || null;
+    const meetDt1 = c.meetingDate1 && c.meetingTime1 ? `${c.meetingDate1}T${c.meetingTime1}:00+09:00` : null;
+    const meetDt2 = c.meetingDate2 && c.meetingTime2 ? `${c.meetingDate2}T${c.meetingTime2}:00+09:00` : null;
 
+    // ─── 1. 의뢰사 DB (순수 고객정보만, 본문 없음) ───
     const clientProps = {
       '법인 · 개인명': { title: [{ text: { content: c.businessName || '' } }] },
       '담당자명': { rich_text: [{ text: { content: c.name || '' } }] },
       '연락처': { phone_number: c.phone || null },
       '이메일': { email: c.email || null },
-      '스코어링': { rich_text: [{ text: { content: `총${Math.round(data.totalScore||0)}점 | ${scoreText}` } }] },
       '상태': { status: { name: '문의접수' } },
       '개발의뢰서': { select: { name: data.willWriteDoc ? '작성예정' : '미작성' } },
     };
     if (c.country) clientProps['국가'] = { select: { name: c.country } };
     if (c.businessType) clientProps['사업자 구분'] = { select: { name: c.businessType } };
-    if (meetDt1) clientProps['희망 미팅일1'] = { date: { start: meetDt1 } };
-    if (meetDt2) clientProps['희망 미팅일2'] = { date: { start: meetDt2 } };
-
-    const clientChildren = [
-      { object: 'block', type: 'heading_2', heading_2: { rich_text: [{ type: 'text', text: { content: '👤 고객 정보' } }] } },
-      { object: 'block', type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: {
-        content: `이름: ${c.name}\n연락처: ${c.phone}\n이메일: ${c.email}\n국가: ${c.country}\n사업자: ${c.businessType || ''} · ${c.businessName}`
-      } }] } },
-      { object: 'block', type: 'heading_2', heading_2: { rich_text: [{ type: 'text', text: { content: '☑️ TODO' } }] } },
-      { object: 'block', type: 'to_do', to_do: { rich_text: [{ type: 'text', text: { content: '담당자 배정' } }], checked: false } },
-      { object: 'block', type: 'to_do', to_do: { rich_text: [{ type: 'text', text: { content: '가이드 메일 발송' } }], checked: false } },
-      { object: 'block', type: 'to_do', to_do: { rich_text: [{ type: 'text', text: { content: '미팅 일정 확정' } }], checked: false } },
-      { object: 'block', type: 'to_do', to_do: { rich_text: [{ type: 'text', text: { content: '1차 ZOOM 미팅' } }], checked: false } },
-    ];
 
     const clientPage = await notionCall(TOKEN, 'POST', '/pages', {
       parent: { database_id: '3a74c864712880a09e70d7a860e39920' },
       properties: clientProps,
-      children: clientChildren,
+      // children 없음 — 페이지 본문 비워둠
     });
 
-    // ─── 2. 기획개발의뢰서 링크 ───
-    const BASE_URL = process.env.VERCEL_PROJECT_PRODUCTION_URL
-      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-      : process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://dermacellex-sxip.vercel.app';
-    const formUrl = `${BASE_URL}/form?client=${clientPage.id}`;
-
+    // ─── 2. 기획개발의뢰서 링크 (작성예정인 경우만) ───
     if (data.willWriteDoc) {
+      const BASE_URL = process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://dermacellex-sxip.vercel.app';
+      const formUrl = `${BASE_URL}/form?client=${clientPage.id}`;
+
       await notionCall(TOKEN, 'PATCH', `/blocks/${clientPage.id}/children`, {
         children: [
-          { object: 'block', type: 'heading_2', heading_2: { rich_text: [{ type: 'text', text: { content: '📝 기획개발의뢰서' } }] } },
+          { object: 'block', type: 'heading_3', heading_3: { rich_text: [{ type: 'text', text: { content: '📝 기획개발의뢰서' } }] } },
           { object: 'block', type: 'bookmark', bookmark: { url: formUrl } },
         ]
       });
     }
 
-    // ─── 3. 스코어링 DB (Q1~Q20 선택내용 표 포함) ───
-    const answers = data.answers || {};
+    // ─── 3. 고객 진단 스코어링 DB (Q1~Q20 표 + 점수 + 서비스) ───
     const questions = data.questions || [];
 
     const scoreProps = {
@@ -95,12 +78,11 @@ export default async function handler(req, res) {
       '진단일시': { date: { start: new Date().toISOString().substring(0, 10) } },
     };
 
-    // Build Q1~Q20 answer table as page content
+    // Q1~Q20 선택 내용 표
     const scoreChildren = [
       { object: 'block', type: 'heading_2', heading_2: { rich_text: [{ type: 'text', text: { content: '📋 진단 응답 상세' } }] } },
     ];
 
-    // Build table: header + 20 rows
     if (questions.length > 0) {
       const tableRows = [
         { object: 'block', type: 'table_row', table_row: { cells: [
@@ -130,13 +112,13 @@ export default async function handler(req, res) {
       });
     }
 
-    const scorePage = await notionCall(TOKEN, 'POST', '/pages', {
+    await notionCall(TOKEN, 'POST', '/pages', {
       parent: { database_id: 'f36c3ab0bf9f421a8a24ea89abbdd8a3' },
       properties: scoreProps,
       children: scoreChildren,
     });
 
-    // ─── 4. 미팅 스케줄 DB (1건에 희망1안+2안) ───
+    // ─── 4. 미팅 스케줄 DB (1건, 의뢰사 릴레이션) ───
     if (meetDt1) {
       const meetProps = {
         '미팅': { title: [{ text: { content: `${c.businessName} 1차 상담` } }] },
@@ -153,7 +135,7 @@ export default async function handler(req, res) {
       });
     }
 
-    return res.status(200).json({ success: true, pageId: clientPage.id, formUrl });
+    return res.status(200).json({ success: true, pageId: clientPage.id });
   } catch (err) {
     console.error('Error:', err);
     return res.status(500).json({ success: false, error: err.message });
@@ -167,6 +149,6 @@ async function notionCall(token, method, endpoint, body) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const d = await r.json();
-  if (!r.ok) throw new Error('Notion ' + r.status + ': ' + (d.message || 'error'));
+  if (!r.ok) throw new Error('Notion ' + r.status + ': ' + JSON.stringify(d));
   return d;
 }
