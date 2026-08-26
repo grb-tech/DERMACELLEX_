@@ -386,7 +386,7 @@ function MainFlow() {
   const [form, setForm] = useState({
     name: "", phone: "", email: "", country: "대한민국",
     businessType: "", businessName: "", hasLicense: "",
-    hasTrademark: "", distributionCountries: [],
+    hasTrademark: "", distributionCountries: [], inquirySource: [],
     willWriteDoc: null,
     meetingDate1: "", meetingTime1: "", meetingDate2: "", meetingTime2: "",
   });
@@ -476,6 +476,15 @@ function MainFlow() {
       distributionCountries: p.distributionCountries.includes(c)
         ? p.distributionCountries.filter(x => x !== c)
         : [...p.distributionCountries, c],
+    }));
+  };
+
+  const toggleInquiry = (s) => {
+    setForm(p => ({
+      ...p,
+      inquirySource: p.inquirySource.includes(s)
+        ? p.inquirySource.filter(x => x !== s)
+        : [...p.inquirySource, s],
     }));
   };
 
@@ -984,6 +993,22 @@ function MainFlow() {
                 })}
               </div>
               <Err f="distributionCountries" /></div>
+            {/* 문의 경로 */}
+            <div><Label sub="복수 선택">문의 경로</Label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+                {["검색엔진", "SNS", "온라인광고", "제품·제조사검색", "제품레퍼런스", "지인·업계추천", "기존고객·재문의", "박람회·전시회", "세미나·교육", "영업담당자", "파트너·협력사", "B2B플랫폼", "언론·콘텐츠", "기타"].map(s => {
+                  const sel = form.inquirySource.includes(s);
+                  return (
+                    <button key={s} onClick={() => toggleInquiry(s)} style={{
+                      padding: "7px 14px", borderRadius: 100,
+                      border: `1.5px solid ${sel ? C.accent : C.border}`,
+                      background: sel ? C.accentLight : C.surface,
+                      fontSize: 12, color: sel ? C.accent : C.textSub,
+                      fontWeight: sel ? 600 : 400, cursor: "pointer", fontFamily: FONT,
+                    }}>{s}</button>
+                  );
+                })}
+              </div></div>
           </div>
 
           {/* Section: 개발의뢰서 + 미팅 */}
