@@ -388,7 +388,7 @@ function MainFlow() {
     businessType: "", businessName: "", hasLicense: "",
     hasTrademark: "", distributionCountries: [],
     willWriteDoc: null,
-    meetingDate1: "", meetingDate2: "",
+    meetingDate1: "", meetingTime1: "", meetingDate2: "", meetingTime2: "",
   });
   const [errors, setErrors] = useState({});
   const [submitSt, setSubmitSt] = useState(null);
@@ -443,20 +443,22 @@ function MainFlow() {
   };
 
   const pickAnswer = (qi, oi) => {
+    const wasAnswered = answers.hasOwnProperty(qi);
     setAnswers(prev => ({ ...prev, [qi]: oi }));
-    setTimeout(() => {
-      if (qi < QUESTIONS.length - 1) {
-        setAnim(true);
-        setTimeout(() => { setQIdx(i => i + 1); setAnim(false); }, 200);
-      } else {
-        setPhase("result");
-      }
-    }, 320);
+    if (!wasAnswered) {
+      setTimeout(() => {
+        if (qi < QUESTIONS.length - 1) {
+          setAnim(true);
+          setTimeout(() => { setQIdx(i => i + 1); setAnim(false); }, 200);
+        } else {
+          setPhase("result");
+        }
+      }, 320);
+    }
   };
 
   const goBackQuiz = () => {
     if (qIdx > 0) {
-      setAnswers(p => { const n = { ...p }; delete n[qIdx - 1]; return n; });
       setQIdx(i => i - 1);
     } else {
       setPhase("startMsg");
@@ -498,8 +500,18 @@ function MainFlow() {
     setSubmitSt("loading");
 
     const sc = calcScores();
+    // Build Q1~Q20 answer details for Notion table
+    const questionsDetail = QUESTIONS.map((q, i) => ({
+      section: q.section,
+      question: q.question,
+      selectedText: answers[i] !== undefined ? q.options[answers[i]].text : '',
+      score: answers[i] !== undefined ? q.options[answers[i]].score : 0,
+    }));
+
     const payload = {
       customer: form,
+      answers,
+      questions: questionsDetail,
       sectionScores: sc.sectionScaled,
       sectionRaw: sc.sectionRaw,
       totalScore: sc.totalScore,
@@ -507,8 +519,6 @@ function MainFlow() {
       recommendedService: sc.recommended,
       selectedService: chosen,
       willWriteDoc: form.willWriteDoc,
-      meetingDate1: form.meetingDate1,
-      meetingDate2: form.meetingDate2,
       timestamp: new Date().toISOString(),
     };
 
@@ -735,7 +745,7 @@ function MainFlow() {
               const sel = answers[qIdx] === i;
               return (
                 <button key={i}
-                  onClick={() => !answers.hasOwnProperty(qIdx) && pickAnswer(qIdx, i)}
+                  onClick={() => pickAnswer(qIdx, i)}
                   style={{
                     width: "100%", padding: "16px 18px", textAlign: "left",
                     border: `1.5px solid ${sel ? C.accent : C.border}`,
@@ -751,6 +761,17 @@ function MainFlow() {
               );
             })}
           </div>
+          {/* Next button for already-answered questions */}
+          {answers.hasOwnProperty(qIdx) && (
+            <div style={{ padding: "16px 0 0" }}>
+              <button onClick={() => {
+                if (qIdx < QUESTIONS.length - 1) {
+                  setAnim(true);
+                  setTimeout(() => { setQIdx(i => i + 1); setAnim(false); }, 200);
+                } else { setPhase("result"); }
+              }} style={btn1}>다음</button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -762,8 +783,9 @@ function MainFlow() {
       <div style={wrap}>
         <style>{css}</style>
         <div style={hdr}>
+          <button onClick={() => { setPhase("quiz"); setQIdx(QUESTIONS.length - 1); }} style={backBtn}>←</button>
           <div style={{ fontSize: 16, fontWeight: 800, color: C.accent }}>진단 결과</div>
-          <div />
+          <div style={{ width: 32 }} />
         </div>
         <div ref={cRef} style={{ ...body, padding: "24px 20px 140px" }}>
           {/* Hero Card */}
@@ -779,51 +801,6 @@ function MainFlow() {
             <p style={{ fontSize: 14, opacity: 0.9, lineHeight: 1.6 }}>{SVC[recommended].one}</p>
           </div>
 
-          {/* Total Score */}
-          <div style={{
-            background: C.surface, borderRadius: 16, padding: "20px 22px",
-            marginBottom: 16, border: `1px solid ${C.border}`,
-          }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>종합 진단 점수</span>
-              <span style={{ fontSize: 22, fontWeight: 800, color: C.accent }}>{Math.round(scoring.totalScore)}<span style={{ fontSize: 13, fontWeight: 500, color: C.textMuted }}>/{maxTotal}점</span></span>
-            </div>
-            <div style={{ height: 8, background: C.surfaceAlt, borderRadius: 4, overflow: "hidden" }}>
-              <div style={{
-                height: "100%", borderRadius: 4,
-                background: `linear-gradient(90deg, ${C.accent}, ${C.gradEnd})`,
-                width: `${(scoring.totalScore / maxTotal) * 100}%`,
-                transition: "width 0.8s ease",
-              }} />
-            </div>
-          </div>
-
-          {/* Section Breakdown */}
-          <div style={{
-            background: C.surface, borderRadius: 16, padding: "20px 22px",
-            marginBottom: 16, border: `1px solid ${C.border}`,
-          }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: C.textMuted, marginBottom: 16 }}>섹션별 점수</div>
-            {Object.entries(SECTION_WEIGHTS).map(([k, w]) => {
-              const val = scoring.sectionScaled[k] || 0;
-              const pct = (val / w.scaled) * 100;
-              return (
-                <div key={k} style={{ marginBottom: 14 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                    <span style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{w.label}</span>
-                    <span style={{ fontSize: 13, color: C.accent, fontWeight: 700 }}>{Math.round(val)}/{w.scaled}</span>
-                  </div>
-                  <div style={{ height: 5, background: C.surfaceAlt, borderRadius: 3 }}>
-                    <div style={{
-                      height: "100%", borderRadius: 3, background: C.accent,
-                      width: `${pct}%`, transition: "width 0.6s ease",
-                    }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
           {/* Service Cards */}
           <div style={{ fontSize: 13, fontWeight: 700, color: C.textMuted, marginBottom: 12, padding: "0 2px" }}>
             다른 서비스를 선택하실 수도 있습니다
@@ -831,39 +808,47 @@ function MainFlow() {
           {Object.entries(SVC).map(([code, s]) => {
             const isSel = chosen === code;
             const isRec = recommended === code;
+            const isOemOdm = code === "OEM" || code === "ODM";
             return (
-              <button key={code} onClick={() => setSelectedSvc(code)} style={{
-                width: "100%", padding: "16px 18px", marginBottom: 10,
-                border: `1.5px solid ${isSel ? s.color : C.border}`,
-                borderRadius: 14, background: isSel ? `${s.color}08` : C.surface,
-                textAlign: "left", cursor: "pointer", fontFamily: FONT,
-                transition: "all 0.15s", display: "flex", gap: 14, alignItems: "center",
-              }}>
-                <div style={{
-                  width: 44, height: 44, borderRadius: 12,
-                  background: `${s.color}12`, display: "flex",
-                  alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0,
-                }}>{s.icon}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                    <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{code}</span>
-                    {isRec && <span style={{
-                      fontSize: 10, fontWeight: 700, color: C.accent,
-                      background: C.accentLight, padding: "2px 7px", borderRadius: 100,
-                    }}>추천</span>}
-                  </div>
-                  <div style={{ fontSize: 12, color: C.textSub, lineHeight: 1.4 }}>{s.one}</div>
-                </div>
-                <div style={{
-                  width: 20, height: 20, borderRadius: "50%",
-                  border: `2px solid ${isSel ? s.color : C.border}`,
-                  background: isSel ? s.color : "transparent",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  flexShrink: 0, transition: "all 0.15s",
+              <div key={code}>
+                <button onClick={() => setSelectedSvc(code)} style={{
+                  width: "100%", padding: "16px 18px", marginBottom: isOemOdm ? 4 : 10,
+                  border: `1.5px solid ${isSel ? s.color : C.border}`,
+                  borderRadius: 14, background: isSel ? `${s.color}08` : C.surface,
+                  textAlign: "left", cursor: "pointer", fontFamily: FONT,
+                  transition: "all 0.15s", display: "flex", gap: 14, alignItems: "center",
                 }}>
-                  {isSel && <div style={{ width: 6, height: 6, borderRadius: "50%", background: C.white }} />}
-                </div>
-              </button>
+                  <div style={{
+                    width: 44, height: 44, borderRadius: 12,
+                    background: `${s.color}12`, display: "flex",
+                    alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0,
+                  }}>{s.icon}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{code}</span>
+                      {isRec && <span style={{
+                        fontSize: 10, fontWeight: 700, color: C.accent,
+                        background: C.accentLight, padding: "2px 7px", borderRadius: 100,
+                      }}>추천</span>}
+                    </div>
+                    <div style={{ fontSize: 12, color: C.textSub, lineHeight: 1.4 }}>{s.one}</div>
+                  </div>
+                  <div style={{
+                    width: 20, height: 20, borderRadius: "50%",
+                    border: `2px solid ${isSel ? s.color : C.border}`,
+                    background: isSel ? s.color : "transparent",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    flexShrink: 0, transition: "all 0.15s",
+                  }}>
+                    {isSel && <div style={{ width: 6, height: 6, borderRadius: "50%", background: C.white }} />}
+                  </div>
+                </button>
+                {isOemOdm && (
+                  <div style={{ fontSize: 11, color: C.textMuted, padding: "0 6px 8px", lineHeight: 1.4 }}>
+                    화장품 책임판매업 등록 또는 03류 상표 보유 시 권장
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
@@ -1061,25 +1046,52 @@ function MainFlow() {
             )}
           </div>
 
-          {/* 미팅 일정 */}
+          {/* 희망 미팅일 */}
           <div style={{
             background: C.surface, borderRadius: 16, border: `1px solid ${C.border}`,
             padding: "20px 18px", marginBottom: 18,
           }}>
-            <Label req sub="ZOOM 미팅">미팅 가능 일정</Label>
+            <Label req sub="ZOOM 미팅">희망 미팅일</Label>
+            <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 12, lineHeight: 1.5 }}>
+              ※ 한국 시간(KST) 기준 · 영업일(월~금) · 09:00~18:00
+            </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 600, color: C.textMuted, marginBottom: 6 }}>1안 (필수)</div>
-                <input type="datetime-local" value={form.meetingDate1}
-                  onChange={e => setField("meetingDate1", e.target.value)}
-                  style={{ ...inp, borderColor: errors.meetingDate1 ? C.error : C.border }} />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input type="date" value={form.meetingDate1}
+                    onChange={e => setField("meetingDate1", e.target.value)}
+                    style={{ ...inp, flex: 1, borderColor: errors.meetingDate1 ? C.error : C.border }} />
+                  <select value={form.meetingTime1 || ""} onChange={e => setField("meetingTime1", e.target.value)}
+                    style={{ ...inp, flex: 1 }}>
+                    <option value="">시간 선택</option>
+                    {Array.from({ length: 19 }, (_, i) => {
+                      const h = 9 + Math.floor(i / 2);
+                      const m = i % 2 === 0 ? "00" : "30";
+                      if (h >= 18 && m === "30") return null;
+                      return <option key={i} value={`${h}:${m}`}>{`${h}:${m}`}</option>;
+                    }).filter(Boolean)}
+                  </select>
+                </div>
                 <Err f="meetingDate1" />
               </div>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 600, color: C.textMuted, marginBottom: 6 }}>2안 (선택)</div>
-                <input type="datetime-local" value={form.meetingDate2}
-                  onChange={e => setField("meetingDate2", e.target.value)}
-                  style={inp} />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input type="date" value={form.meetingDate2}
+                    onChange={e => setField("meetingDate2", e.target.value)}
+                    style={{ ...inp, flex: 1 }} />
+                  <select value={form.meetingTime2 || ""} onChange={e => setField("meetingTime2", e.target.value)}
+                    style={{ ...inp, flex: 1 }}>
+                    <option value="">시간 선택</option>
+                    {Array.from({ length: 19 }, (_, i) => {
+                      const h = 9 + Math.floor(i / 2);
+                      const m = i % 2 === 0 ? "00" : "30";
+                      if (h >= 18 && m === "30") return null;
+                      return <option key={i} value={`${h}:${m}`}>{`${h}:${m}`}</option>;
+                    }).filter(Boolean)}
+                  </select>
+                </div>
               </div>
             </div>
           </div>
