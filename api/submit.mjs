@@ -144,9 +144,8 @@ export default async function handler(req, res) {
         const meetProps = {
           '미팅': { title: [{ text: { content: `${c.businessName} 1차 상담` } }] },
           '의뢰사': { relation: [{ id: clientPage.id }] },
-          '서비스': { select: { name: svc } },
           '미팅 유형': { select: { name: '1차 상담' } },
-          '상태': { status: { name: '시작 전' } },
+          '상태': { status: { name: '접수' } },
           '희망 미팅일1': { date: { start: meetDt1 } },
         };
         if (meetDt2) meetProps['희망 미팅일2'] = { date: { start: meetDt2 } };
